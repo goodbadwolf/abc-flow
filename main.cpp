@@ -1,7 +1,9 @@
-#include "ftle.h"
-#include <iostream>
-#include <string>
 #include <cstring>
+#include <iostream>
+#include <random>
+#include <string>
+
+#include "ftle.h"
 
 void printUsage(const char *programName)
 {
@@ -13,23 +15,24 @@ void printUsage(const char *programName)
               << "  --B VALUE      Value for B in ABC flow (default: 1.0)\n"
               << "  --C VALUE      Value for C in ABC flow (default: 1.0)\n"
               << "  --randomize    Randomize the flow parameters\n"
+              << "  --numIso N     Number of isosurfaces to generate (default: 5)\n"
               << "  --help         Show this help message\n";
 }
 
-const double A_MIN = 0.5, A_MAX = 2.0;
-const double B_MIN = 0.5, B_MAX = 2.0;
-const double C_MIN = 0.5, C_MAX = 2.0;
-
 int main(int argc, char *argv[])
 {
-    // Default parameters
     int resolution = 64;
     std::string format = "vtk";
-    double A = 1.7320, B = 1.4142, C = 1.0;
-
-    bool providedA = false, providedB = false, providedC = false;
+    double A = 1.7320;
+    double B = 1.4142;
+    double C = 1.0;
     bool randomize = false;
-    // Parse command line arguments
+    int numIso = 5;
+
+    bool providedA = false;
+    bool providedB = false;
+    bool providedC = false;
+
     for (int i = 1; i < argc; i++)
     {
         if (strcmp(argv[i], "--help") == 0)
@@ -80,6 +83,10 @@ int main(int argc, char *argv[])
     FTLEComputer ftle(resolution, format);
     if (randomize)
     {
+        const double A_MIN = 0.5, A_MAX = 2.0;
+        const double B_MIN = 0.5, B_MAX = 2.0;
+        const double C_MIN = 0.5, C_MAX = 2.0;
+
         std::random_device rd;
         std::mt19937 gen(rd());
         if (!providedA)
@@ -105,7 +112,6 @@ int main(int argc, char *argv[])
     std::cout << "Computing FTLE...\n";
     ftle.computeFTLE();
 
-    // Render and allow saving
     std::cout << "Rendering FTLE. Press 'S' to save the output during rendering using format " << format << "\n";
     ftle.renderWithSave();
 

@@ -1,24 +1,16 @@
 #pragma once
 
-#include <openvdb/openvdb.h>
-#include <openvdb/tools/Dense.h>
-#include <vtkSmartPointer.h>
-#include <vtkImageData.h>
-#include <vtkDoubleArray.h>
-#include <vtkPointData.h>
 #include <array>
-#include <vector>
 #include <chrono>
 #include <functional>
+#include <vector>
 
-// Constants for the ABC flow
-const double A = 1.0;
-const double B = 1.0;
-const double C = 1.0;
-const double omega = 0.1;
-
-// Timer wrapper
-#include <functional>
+#include <vtkActor.h>
+#include <vtkContourFilter.h>
+#include <vtkDoubleArray.h>
+#include <vtkImageData.h>
+#include <vtkPointData.h>
+#include <vtkSmartPointer.h>
 
 template <typename F, typename... Args>
 auto measureTime(F &&func, Args &&...args)
@@ -59,6 +51,8 @@ public:
     void setABCParameters(double a, double b, double c);
     void renderWithSave();
     std::string getFormat() { return format; }
+    bool toggleContour();
+    void toggleActiveField();
 
 private:
     Vector3d abcFlow(const Vector3d &pos, double t);
@@ -69,12 +63,19 @@ private:
     std::vector<double> computeFTLEField(const std::vector<Vector3d> &initial,
                                          const std::vector<Vector3d> &advected,
                                          double dt);
-
+    void resetContourFilter();
     int resolution;
     double cellSpacing;
-    vtkSmartPointer<vtkImageData> grid;
     std::vector<double> fftle;
     std::vector<double> bftle;
     double A, B, C;
     std::string format;
+    bool showContour = false;
+    int numContours = 10;
+    std::string activeField = "FFTLE";
+    vtkSmartPointer<vtkImageData> grid;
+    vtkSmartPointer<vtkActor> cubeActor;
+    vtkSmartPointer<vtkActor> contourActor;
+    vtkSmartPointer<vtkRenderer> renderer;
+    vtkSmartPointer<vtkContourFilter> contourFilter;
 };
