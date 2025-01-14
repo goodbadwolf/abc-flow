@@ -1,8 +1,12 @@
 #include "ftle.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <execution>
+#include <filesystem>
 #include <iostream>
+#include <string>
 
 #include <openvdb/openvdb.h>
 #include <openvdb/tools/Dense.h>
@@ -22,9 +26,27 @@
 #include <vtkSmartPointer.h>
 #include <vtkXMLImageDataWriter.h>
 
+std::string ToLower(const std::string &str)
+{
+    std::string result = str;
+    std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c)
+                   { return std::tolower(c); });
+    return result;
+}
+
+std::string FindNextAvailableFileName(std::function<std::string(int counter)> fileNameGenerator)
+{
+    int counter = 0;
+    std::string fileName = fileNameGenerator(counter);
+    while (std::filesystem::exists(fileName))
+    {
+        fileName = fileNameGenerator(++counter);
+    }
+    return fileName;
+}
+
 void KeypressCallbackFunction(vtkObject *caller, long unsigned int eventId, void *clientData, void *callData)
 {
-    static int counter = 0;
     auto computer = static_cast<FTLEComputer *>(clientData);
     auto grid = computer->getGrid();
     auto interactor = static_cast<vtkRenderWindowInteractor *>(caller);
@@ -33,16 +55,18 @@ void KeypressCallbackFunction(vtkObject *caller, long unsigned int eventId, void
     if (key == "s")
     {
         std::cout << "Using format: " << computer->getFormat() << std::endl;
-        std::string filename = "ftle_output_" + std::to_string(counter++) + (computer->getFormat() == "vtk" ? ".vti" : ".vdb");
+        std::string fileName = FindNextAvailableFileName([&computer](int counter)
+                                                         { 
+                                    std::string ext = computer->getFormat() == "vtk" ? ".vti" : ".vdb";
+                                    return "ftle_" + ToLower(computer->getActiveFieldName()) + "_" + std::to_string(counter) + ext; });
         if (computer->getFormat() == "vtk")
         {
-            computer->saveToVTK(filename);
+            computer->saveToVTK(fileName);
         }
         else
         {
-            computer->saveToVDB(filename);
+            computer->saveToVDB(fileName);
         }
-        std::cout << "Saved file: " << filename << std::endl;
     }
     else if (key == "i")
     {
@@ -202,7 +226,7 @@ void FTLEComputer::computeFTLE()
     grid->GetPointData()->SetActiveScalars(activeField.c_str());
 }
 
-void FTLEComputer::saveToVDB(const std::string &filename)
+void FTLEComputer::saveToVDB(const std::string &fileName)
 {
     openvdb::initialize();
 
@@ -248,11 +272,12 @@ void FTLEComputer::saveToVDB(const std::string &filename)
         grids.push_back(bftle_grid);
     }
 
-    openvdb::io::File file(filename);
+    openvdb::io::File file(fileName);
     file.write(grids);
     file.close();
+    saveParameters(fileName);
 
-    std::cout << "Saved OpenVDB file to: " << filename << "\n";
+    std::cout << "Saved OpenVDB file to: " << fileName << "\n";
     std::cout << "Grid statistics:\n";
     if (this->activeField == "FFTLE")
     {
@@ -264,13 +289,25 @@ void FTLEComputer::saveToVDB(const std::string &filename)
     }
 }
 
-void FTLEComputer::saveToVTK(const std::string &filename)
+void FTLEComputer::saveToVTK(const std::string &fileName)
 {
     vtkSmartPointer<vtkXMLImageDataWriter> writer =
         vtkSmartPointer<vtkXMLImageDataWriter>::New();
-    writer->SetFileName(filename.c_str());
+    writer->SetFileName(fileName.c_str());
     writer->SetInputData(grid);
     writer->Write();
+    saveParameters(fileName);
+}
+
+void FTLEComputer::saveParameters(const std::string &datasetFileName)
+{
+    std::string fileName = datasetFileName.substr(0, datasetFileName.find_last_of('.')) + "_params.txt";
+    std::ofstream paramFile(fileName);
+    paramFile << "Resolution: " << resolution << "\n";
+    paramFile << "A: " << A << "\n";
+    paramFile << "B: " << B << "\n";
+    paramFile << "C: " << C << "\n";
+    paramFile.close();
 }
 
 void FTLEComputer::setABCParameters(double a, double b, double c)

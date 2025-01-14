@@ -53,6 +53,7 @@ public:
     std::string getFormat() { return format; }
     bool toggleContour();
     void toggleActiveField();
+    std::string getActiveFieldName() { return activeField; }
 
 private:
     Vector3d abcFlow(const Vector3d &pos, double t);
@@ -64,6 +65,8 @@ private:
                                          const std::vector<Vector3d> &advected,
                                          double dt);
     void resetContourFilter();
+    void saveParameters(const std::string &datasetFileName);
+
     int resolution;
     double cellSpacing;
     std::vector<double> fftle;
