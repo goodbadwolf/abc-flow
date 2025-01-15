@@ -40,26 +40,24 @@ struct ParticleAdvectionParams
 class FTLEComputer
 {
 public:
-    FTLEComputer(int resolution, std::string format);
+    FTLEComputer(int resolution);
 
-    vtkSmartPointer<vtkImageData> getGrid() { return grid; }
-    std::string getActiveFieldName() { return activeField; }
-
-    int getNumIsos() { return numContours; }
+    void setOutputFormat(const std::string &outputFormat);
     void setNumIsos(int numIsos) { numContours = numIsos; }
-
-    void setABCParameters(double a, double b, double c);
-
-    std::string getFormat() { return format; }
-
-    bool toggleContour();
-    void toggleActiveField();
-
+    void setABCParameters(double a, double b, double c)
+    {
+        A = a;
+        B = b;
+        C = c;
+    }
     void setAdvectionParams(const ParticleAdvectionParams &params)
     {
         advectionParams = params;
         currentCheckpoint = -1;
     }
+
+    bool toggleContour();
+    void toggleActiveField();
 
     void advanceCheckpoint();
     void backtrackCheckpoint();
@@ -89,12 +87,12 @@ private:
     std::vector<double> fftle;
     std::vector<double> bftle;
     double A, B, C;
-    std::string format;
+    std::string outputFormat;
     ParticleAdvectionParams advectionParams;
     int currentCheckpoint = -1;
     bool showContour = false;
     int numContours = 10;
-    std::string activeField = "FFTLE";
+    std::string activeFieldName = "FFTLE";
     vtkSmartPointer<vtkImageData> grid;
     vtkSmartPointer<vtkActor> cubeActor;
     vtkSmartPointer<vtkActor> contourActor;

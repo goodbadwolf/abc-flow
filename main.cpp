@@ -105,7 +105,6 @@ int main(int argc, char *argv[])
         }
     }
 
-    FTLEComputer ftle(resolution, format);
     if (randomize)
     {
         const double A_MIN = 0.5, A_MAX = 2.0;
@@ -131,9 +130,11 @@ int main(int argc, char *argv[])
         }
     }
 
+    FTLEComputer ftle(resolution);
     ftle.setABCParameters(A, B, C);
     ftle.setNumIsos(numIsos);
     ftle.setAdvectionParams({t0, tf, dt, numCheckpoints});
+    ftle.setOutputFormat(format);
 
     std::cout << "Computing FTLE...\n";
     ftle.advanceCheckpoint();

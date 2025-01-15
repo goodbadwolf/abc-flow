@@ -52,7 +52,6 @@ std::string FindNextAvailableFileName(std::function<std::string(int counter)> fi
 void KeypressCallbackFunction(vtkObject *caller, long unsigned int eventId, void *clientData, void *callData)
 {
     auto computer = static_cast<FTLEComputer *>(clientData);
-    auto grid = computer->getGrid();
     auto interactor = static_cast<vtkRenderWindowInteractor *>(caller);
 
     std::string key = interactor->GetKeySym();
@@ -95,12 +94,12 @@ auto measureTime(F &&func, Args &&...args)
 
 void FTLEComputer::saveGrid()
 {
-    std::cout << "Using format: " << this->getFormat() << std::endl;
+    std::cout << "Saving grid using format: " << this->outputFormat << std::endl;
     std::string fileName = FindNextAvailableFileName([this](int counter)
                                                      { 
-                                    std::string ext = this->getFormat() == "vtk" ? ".vti" : ".vdb";
-                                    return ToLower(this->getActiveFieldName()) + "_" + std::to_string(counter) + ext; });
-    if (this->getFormat() == "vtk")
+                                    std::string ext = this->outputFormat == "vtk" ? ".vti" : ".vdb";
+                                    return ToLower(this->activeFieldName) + "_" + std::to_string(counter) + ext; });
+    if (this->outputFormat == "vtk")
     {
         this->saveToVTK(fileName);
     }
@@ -110,8 +109,8 @@ void FTLEComputer::saveGrid()
     }
 }
 
-FTLEComputer::FTLEComputer(int res, std::string format) : resolution(res), format(format), A(1.0), B(1.0), C(1.0),
-                                                          advectionParams({0.0, 10.0, 0.1, 1}), currentCheckpoint(-1)
+FTLEComputer::FTLEComputer(int res) : resolution(res), outputFormat("vdb"), A(1.0), B(1.0), C(1.0),
+                                      advectionParams({0.0, 10.0, 0.1, 1}), currentCheckpoint(-1)
 {
     cellSpacing = 2.0 * M_PI / (resolution - 1);
     grid = vtkSmartPointer<vtkImageData>::New();
@@ -301,7 +300,7 @@ void FTLEComputer::saveToVDB(const std::string &fileName)
     openvdb::tools::copyFromDense(bftle_dense, *bftle_grid, 0.0f, true);
 
     openvdb::GridPtrVec grids;
-    if (this->activeField == "FFTLE")
+    if (this->activeFieldName == "FFTLE")
     {
         grids.push_back(fftle_grid);
     }
@@ -317,7 +316,7 @@ void FTLEComputer::saveToVDB(const std::string &fileName)
 
     std::cout << "Saved OpenVDB file to: " << fileName << "\n";
     std::cout << "Grid statistics:\n";
-    if (this->activeField == "FFTLE")
+    if (this->activeFieldName == "FFTLE")
     {
         std::cout << "FFTLE grid active voxels: " << fftle_grid->activeVoxelCount() << "\n";
     }
@@ -348,11 +347,9 @@ void FTLEComputer::saveParameters(const std::string &datasetFileName)
     paramFile.close();
 }
 
-void FTLEComputer::setABCParameters(double a, double b, double c)
+void FTLEComputer::setOutputFormat(const std::string &outputFormat)
 {
-    A = a;
-    B = b;
-    C = c;
+    this->outputFormat = outputFormat;
 }
 
 bool FTLEComputer::toggleContour()
@@ -398,7 +395,7 @@ void FTLEComputer::updateGrid(const std::vector<double> &fftle, const std::vecto
     }
     pointData->AddArray(fftleArray);
     pointData->AddArray(bftleArray);
-    pointData->SetActiveScalars(this->activeField.c_str());
+    pointData->SetActiveScalars(this->activeFieldName.c_str());
     pointData->Modified();
     grid->Modified();
 }
@@ -518,10 +515,9 @@ void FTLEComputer::toggleActiveField()
         std::cerr << "No scalar data available to toggle.\n";
         return;
     }
-    std::string currentScalar = pointData->GetScalars()->GetName();
-    this->activeField = (currentScalar == "FFTLE") ? "BFTLE" : "FFTLE";
-    pointData->SetActiveScalars(this->activeField.c_str());
-    std::cout << "Toggled active scalar to: " << this->activeField << "\n";
+    this->activeFieldName = (this->activeFieldName == "FFTLE") ? "BFTLE" : "FFTLE";
+    pointData->SetActiveScalars(this->activeFieldName.c_str());
+    std::cout << "Toggled active scalar to: " << this->activeFieldName << "\n";
 
     cubeActor->GetMapper()->SetScalarRange(grid->GetPointData()->GetScalars()->GetRange());
     cubeActor->GetMapper()->Update();
