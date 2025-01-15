@@ -11,11 +11,12 @@ void printUsage(const char *programName)
               << "Options:\n"
               << "  --res N        Grid resolution (default: 64)\n"
               << "  --format TYPE  Output format: vtk or vdb (default: vtk)\n"
+              << "  -- tf VALUE    Final time for particle advection (default: 10.0)\n"
               << "  --A VALUE      Value for A in ABC flow (default: 1.0)\n"
               << "  --B VALUE      Value for B in ABC flow (default: 1.0)\n"
               << "  --C VALUE      Value for C in ABC flow (default: 1.0)\n"
               << "  --randomize    Randomize the flow parameters\n"
-              << "  --numIso N     Number of isosurfaces to generate (default: 5)\n"
+              << "  --numIsos N    Number of isosurfaces to generate (default: 5)\n"
               << "  --help         Show this help message\n";
 }
 
@@ -27,7 +28,11 @@ int main(int argc, char *argv[])
     double B = 1.4142;
     double C = 1.0;
     bool randomize = false;
-    int numIso = 5;
+    int numIsos = 5;
+    double t0 = 0.0;
+    double tf = 10.0;
+    double dt = 0.1;
+    int numCheckpoints = 1;
 
     bool providedA = false;
     bool providedB = false;
@@ -72,6 +77,26 @@ int main(int argc, char *argv[])
         {
             randomize = true;
         }
+        else if (strcmp(argv[i], "--t0") == 0 && i + 1 < argc)
+        {
+            t0 = std::stod(argv[++i]);
+        }
+        else if (strcmp(argv[i], "--tf") == 0 && i + 1 < argc)
+        {
+            tf = std::stod(argv[++i]);
+        }
+        else if (strcmp(argv[i], "--dt") == 0 && i + 1 < argc)
+        {
+            dt = std::stod(argv[++i]);
+        }
+        else if (strcmp(argv[i], "--numCheckpoints") == 0 && i + 1 < argc)
+        {
+            numCheckpoints = std::stoi(argv[++i]);
+        }
+        else if (strcmp(argv[i], "--numIsos") == 0 && i + 1 < argc)
+        {
+            numIsos = std::stoi(argv[++i]);
+        }
         else
         {
             std::cerr << "Unknown option: " << argv[i] << "\n";
@@ -106,14 +131,15 @@ int main(int argc, char *argv[])
         }
     }
 
-    std::cout << "Setting ABC flow parameters: A=" << A << ", B=" << B << ", C=" << C << "\n";
     ftle.setABCParameters(A, B, C);
+    ftle.setNumIsos(numIsos);
+    ftle.setAdvectionParams({t0, tf, dt, numCheckpoints});
 
     std::cout << "Computing FTLE...\n";
-    ftle.computeFTLE();
+    ftle.advanceCheckpoint();
 
     std::cout << "Rendering FTLE. Press 'S' to save the output during rendering using format " << format << "\n";
-    ftle.renderWithSave();
+    ftle.render();
 
     return 0;
 }

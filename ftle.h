@@ -12,17 +12,6 @@
 #include <vtkPointData.h>
 #include <vtkSmartPointer.h>
 
-template <typename F, typename... Args>
-auto measureTime(F &&func, Args &&...args)
-{
-    auto start = std::chrono::high_resolution_clock::now();
-    auto result = std::invoke(std::forward<F>(func), std::forward<Args>(args)...);
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.0;
-    return std::make_pair(result, duration);
-}
-
-// Structure to hold 3D vector
 struct Vector3d
 {
     double x, y, z;
@@ -40,32 +29,60 @@ struct Vector3d
     }
 };
 
+struct ParticleAdvectionParams
+{
+    double t0;
+    double tf;
+    double dt;
+    int numCheckpoints;
+};
+
 class FTLEComputer
 {
 public:
     FTLEComputer(int resolution, std::string format);
-    void computeFTLE();
-    void saveToVDB(const std::string &filename);
-    void saveToVTK(const std::string &filename);
+
     vtkSmartPointer<vtkImageData> getGrid() { return grid; }
-    void setABCParameters(double a, double b, double c);
-    void renderWithSave();
-    std::string getFormat() { return format; }
-    bool toggleContour();
-    void toggleActiveField();
     std::string getActiveFieldName() { return activeField; }
 
+    int getNumIsos() { return numContours; }
+    void setNumIsos(int numIsos) { numContours = numIsos; }
+
+    void setABCParameters(double a, double b, double c);
+
+    std::string getFormat() { return format; }
+
+    bool toggleContour();
+    void toggleActiveField();
+
+    void setAdvectionParams(const ParticleAdvectionParams &params)
+    {
+        advectionParams = params;
+        currentCheckpoint = -1;
+    }
+
+    void advanceCheckpoint();
+    void backtrackCheckpoint();
+
+    void render();
+
+    void saveGrid();
+
 private:
-    Vector3d abcFlow(const Vector3d &pos, double t);
     Vector3d unsteadyABCFlow(const Vector3d &pos, double t);
     std::vector<Vector3d> seedParticles();
     std::vector<Vector3d> advectParticles(const std::vector<Vector3d> &particles,
                                           double t0, double tf, double dt, bool forward);
+    void computeFTLE();
     std::vector<double> computeFTLEField(const std::vector<Vector3d> &initial,
                                          const std::vector<Vector3d> &advected,
                                          double dt);
+    void updateGrid(const std::vector<double> &fftle, const std::vector<double> &bftle);
     void resetContourFilter();
     void saveParameters(const std::string &datasetFileName);
+    void saveToVDB(const std::string &filename);
+    void saveToVTK(const std::string &filename);
+    void updateScene();
 
     int resolution;
     double cellSpacing;
@@ -73,6 +90,8 @@ private:
     std::vector<double> bftle;
     double A, B, C;
     std::string format;
+    ParticleAdvectionParams advectionParams;
+    int currentCheckpoint = -1;
     bool showContour = false;
     int numContours = 10;
     std::string activeField = "FFTLE";
