@@ -10,6 +10,7 @@
 #include <vtkDoubleArray.h>
 #include <vtkImageData.h>
 #include <vtkPointData.h>
+#include <vtkRenderWindow.h>
 #include <vtkSmartPointer.h>
 
 struct Vector3d
@@ -40,26 +41,15 @@ struct ParticleAdvectionParams
 class FTLEComputer
 {
 public:
-    FTLEComputer(int resolution, std::string format);
-
-    vtkSmartPointer<vtkImageData> getGrid() { return grid; }
-    std::string getActiveFieldName() { return activeField; }
-
-    int getNumIsos() { return numContours; }
-    void setNumIsos(int numIsos) { numContours = numIsos; }
+    FTLEComputer(int gridResolution);
 
     void setABCParameters(double a, double b, double c);
+    void setAdvectionParams(const ParticleAdvectionParams &params);
+    void setNumContours(int numContours);
+    void setOutputFormat(const std::string &outputFormat);
 
-    std::string getFormat() { return format; }
-
-    bool toggleContour();
+    void toggleShowContours();
     void toggleActiveField();
-
-    void setAdvectionParams(const ParticleAdvectionParams &params)
-    {
-        advectionParams = params;
-        currentCheckpoint = -1;
-    }
 
     void advanceCheckpoint();
     void backtrackCheckpoint();
@@ -69,35 +59,34 @@ public:
     void saveGrid();
 
 private:
-    Vector3d unsteadyABCFlow(const Vector3d &pos, double t);
     std::vector<Vector3d> seedParticles();
+    void computeFTLE();
+
     std::vector<Vector3d> advectParticles(const std::vector<Vector3d> &particles,
                                           double t0, double tf, double dt, bool forward);
-    void computeFTLE();
+    Vector3d unsteadyABCFlow(const Vector3d &pos, double t);
     std::vector<double> computeFTLEField(const std::vector<Vector3d> &initial,
                                          const std::vector<Vector3d> &advected,
                                          double dt);
     void updateGrid(const std::vector<double> &fftle, const std::vector<double> &bftle);
-    void resetContourFilter();
-    void saveParameters(const std::string &datasetFileName);
-    void saveToVDB(const std::string &filename);
-    void saveToVTK(const std::string &filename);
+
     void updateScene();
 
-    int resolution;
-    double cellSpacing;
+    void saveToVDB(const std::string &filename);
+    void saveToVTK(const std::string &filename);
+    void saveSimParameters(const std::string &datasetFileName);
+
+    int gridResolution;
     std::vector<double> fftle;
     std::vector<double> bftle;
     double A, B, C;
-    std::string format;
+    std::string outputFormat;
     ParticleAdvectionParams advectionParams;
     int currentCheckpoint = -1;
     bool showContour = false;
     int numContours = 10;
-    std::string activeField = "FFTLE";
+    std::string activeFieldName = "FFTLE";
     vtkSmartPointer<vtkImageData> grid;
-    vtkSmartPointer<vtkActor> cubeActor;
-    vtkSmartPointer<vtkActor> contourActor;
     vtkSmartPointer<vtkRenderer> renderer;
-    vtkSmartPointer<vtkContourFilter> contourFilter;
+    vtkSmartPointer<vtkRenderWindow> renderWindow;
 };

@@ -52,7 +52,6 @@ std::string FindNextAvailableFileName(std::function<std::string(int counter)> fi
 void KeypressCallbackFunction(vtkObject *caller, long unsigned int eventId, void *clientData, void *callData)
 {
     auto computer = static_cast<FTLEComputer *>(clientData);
-    auto grid = computer->getGrid();
     auto interactor = static_cast<vtkRenderWindowInteractor *>(caller);
 
     std::string key = interactor->GetKeySym();
@@ -62,9 +61,9 @@ void KeypressCallbackFunction(vtkObject *caller, long unsigned int eventId, void
     }
     else if (key == "i")
     {
-        computer->toggleContour();
+        computer->toggleShowContours();
     }
-    else if (key == "f")
+    else if (key == "t")
     {
         computer->toggleActiveField();
     }
@@ -93,31 +92,37 @@ auto measureTime(F &&func, Args &&...args)
     return std::make_pair(result, duration);
 }
 
-void FTLEComputer::saveGrid()
+FTLEComputer::FTLEComputer(int gridResolution) : gridResolution(gridResolution), outputFormat("vdb"), A(1.0), B(1.0), C(1.0),
+                                                 advectionParams({0.0, 10.0, 0.1, 1}), currentCheckpoint(-1)
 {
-    std::cout << "Using format: " << this->getFormat() << std::endl;
-    std::string fileName = FindNextAvailableFileName([this](int counter)
-                                                     { 
-                                    std::string ext = this->getFormat() == "vtk" ? ".vti" : ".vdb";
-                                    return ToLower(this->getActiveFieldName()) + "_" + std::to_string(counter) + ext; });
-    if (this->getFormat() == "vtk")
-    {
-        this->saveToVTK(fileName);
-    }
-    else
-    {
-        this->saveToVDB(fileName);
-    }
-}
-
-FTLEComputer::FTLEComputer(int res, std::string format) : resolution(res), format(format), A(1.0), B(1.0), C(1.0),
-                                                          advectionParams({0.0, 10.0, 0.1, 1}), currentCheckpoint(-1)
-{
-    cellSpacing = 2.0 * M_PI / (resolution - 1);
+    double cellSpacing = 2.0 * M_PI / (gridResolution - 1);
     grid = vtkSmartPointer<vtkImageData>::New();
-    grid->SetDimensions(resolution, resolution, resolution);
+    grid->SetDimensions(gridResolution, gridResolution, gridResolution);
     grid->SetSpacing(cellSpacing, cellSpacing, cellSpacing);
     grid->SetOrigin(0, 0, 0);
+}
+
+void FTLEComputer::setABCParameters(double a, double b, double c)
+{
+    A = a;
+    B = b;
+    C = c;
+}
+
+void FTLEComputer::setAdvectionParams(const ParticleAdvectionParams &params)
+{
+    advectionParams = params;
+    currentCheckpoint = -1;
+}
+
+void FTLEComputer::setOutputFormat(const std::string &outputFormat)
+{
+    this->outputFormat = outputFormat;
+}
+
+void FTLEComputer::setNumContours(int numContours)
+{
+    this->numContours = numContours;
 }
 
 Vector3d FTLEComputer::unsteadyABCFlow(const Vector3d &pos, double t)
@@ -135,19 +140,20 @@ Vector3d FTLEComputer::unsteadyABCFlow(const Vector3d &pos, double t)
 std::vector<Vector3d> FTLEComputer::seedParticles()
 {
     std::vector<Vector3d> particles;
-    particles.reserve(resolution * resolution * resolution);
+    particles.reserve(gridResolution * gridResolution * gridResolution);
     auto origin = grid->GetOrigin();
+    auto spacing = grid->GetSpacing();
 
-    for (int k = 0; k < resolution; ++k)
+    for (int k = 0; k < gridResolution; ++k)
     {
-        for (int j = 0; j < resolution; ++j)
+        for (int j = 0; j < gridResolution; ++j)
         {
-            for (int i = 0; i < resolution; ++i)
+            for (int i = 0; i < gridResolution; ++i)
             {
                 particles.emplace_back(
-                    origin[0] + i * cellSpacing,
-                    origin[1] + j * cellSpacing,
-                    origin[2] + k * cellSpacing);
+                    origin[0] + i * spacing[0],
+                    origin[1] + j * spacing[1],
+                    origin[2] + k * spacing[2]);
             }
         }
     }
@@ -210,6 +216,11 @@ void FTLEComputer::advanceCheckpoint()
     }
     currentCheckpoint++;
     this->computeFTLE();
+    if (this->renderer)
+    {
+
+        this->renderer->GetRenderWindow()->Render();
+    }
 }
 
 void FTLEComputer::backtrackCheckpoint()
@@ -221,6 +232,10 @@ void FTLEComputer::backtrackCheckpoint()
     }
     currentCheckpoint--;
     this->computeFTLE();
+    if (this->renderer)
+    {
+        this->renderer->GetRenderWindow()->Render();
+    }
 }
 
 void FTLEComputer::computeFTLE()
@@ -275,22 +290,22 @@ void FTLEComputer::saveToVDB(const std::string &fileName)
     bftle_grid->setName("BFTLE");
 
     openvdb::math::Transform::Ptr transform =
-        openvdb::math::Transform::createLinearTransform(cellSpacing);
+        openvdb::math::Transform::createLinearTransform(grid->GetSpacing()[0]);
     fftle_grid->setTransform(transform);
     bftle_grid->setTransform(transform);
 
     openvdb::tools::Dense<float>
-        fftle_dense(openvdb::Coord(resolution, resolution, resolution));
+        fftle_dense(openvdb::Coord(gridResolution, gridResolution, gridResolution));
     openvdb::tools::Dense<float>
-        bftle_dense(openvdb::Coord(resolution, resolution, resolution));
+        bftle_dense(openvdb::Coord(gridResolution, gridResolution, gridResolution));
 
-    for (int k = 0; k < resolution; ++k)
+    for (int k = 0; k < gridResolution; ++k)
     {
-        for (int j = 0; j < resolution; ++j)
+        for (int j = 0; j < gridResolution; ++j)
         {
-            for (int i = 0; i < resolution; ++i)
+            for (int i = 0; i < gridResolution; ++i)
             {
-                int idx = k * resolution * resolution + j * resolution + i;
+                int idx = k * gridResolution * gridResolution + j * gridResolution + i;
                 fftle_dense.setValue(i, j, k, fftle[idx]);
                 bftle_dense.setValue(i, j, k, bftle[idx]);
             }
@@ -301,7 +316,7 @@ void FTLEComputer::saveToVDB(const std::string &fileName)
     openvdb::tools::copyFromDense(bftle_dense, *bftle_grid, 0.0f, true);
 
     openvdb::GridPtrVec grids;
-    if (this->activeField == "FFTLE")
+    if (this->activeFieldName == "FFTLE")
     {
         grids.push_back(fftle_grid);
     }
@@ -313,11 +328,10 @@ void FTLEComputer::saveToVDB(const std::string &fileName)
     openvdb::io::File file(fileName);
     file.write(grids);
     file.close();
-    saveParameters(fileName);
 
     std::cout << "Saved OpenVDB file to: " << fileName << "\n";
     std::cout << "Grid statistics:\n";
-    if (this->activeField == "FFTLE")
+    if (this->activeFieldName == "FFTLE")
     {
         std::cout << "FFTLE grid active voxels: " << fftle_grid->activeVoxelCount() << "\n";
     }
@@ -334,42 +348,31 @@ void FTLEComputer::saveToVTK(const std::string &fileName)
     writer->SetFileName(fileName.c_str());
     writer->SetInputData(grid);
     writer->Write();
-    saveParameters(fileName);
 }
 
-void FTLEComputer::saveParameters(const std::string &datasetFileName)
+void FTLEComputer::saveSimParameters(const std::string &fileName)
 {
-    std::string fileName = datasetFileName.substr(0, datasetFileName.find_last_of('.')) + "_params.txt";
     std::ofstream paramFile(fileName);
-    paramFile << "Resolution: " << resolution << "\n";
+    paramFile << "gridResolution: " << gridResolution << "x" << gridResolution << "x" << gridResolution << "\n";
     paramFile << "A: " << A << "\n";
     paramFile << "B: " << B << "\n";
     paramFile << "C: " << C << "\n";
+    paramFile << "t0: " << advectionParams.t0 << "\n";
+    paramFile << "tf: " << advectionParams.tf << "\n";
+    paramFile << "dt: " << advectionParams.dt << "\n";
+    paramFile << "currentCheckpoint: " << currentCheckpoint << "\n";
+    paramFile << "numCheckpoints: " << advectionParams.numCheckpoints << "\n";
     paramFile.close();
 }
 
-void FTLEComputer::setABCParameters(double a, double b, double c)
-{
-    A = a;
-    B = b;
-    C = c;
-}
-
-bool FTLEComputer::toggleContour()
+void FTLEComputer::toggleShowContours()
 {
     showContour = !showContour;
-    this->cubeActor->SetVisibility(!showContour);
-    this->contourActor->SetVisibility(showContour);
-    this->cubeActor->GetMapper()->Update();
-    this->contourActor->GetMapper()->Update();
-    return showContour;
-}
-
-void FTLEComputer::resetContourFilter()
-{
-    contourFilter = vtkSmartPointer<vtkContourFilter>::New();
-    contourFilter->SetInputData(grid);
-    contourFilter->GenerateValues(this->numContours, grid->GetPointData()->GetScalars()->GetRange());
+    if (renderer)
+    {
+        this->updateScene();
+        renderer->GetRenderWindow()->Render();
+    }
 }
 
 void FTLEComputer::updateGrid(const std::vector<double> &fftle, const std::vector<double> &bftle)
@@ -386,85 +389,54 @@ void FTLEComputer::updateGrid(const std::vector<double> &fftle, const std::vecto
     bftleArray->SetNumberOfTuples(grid->GetNumberOfPoints());
     std::copy(bftle.begin(), bftle.end(), bftleArray->GetPointer(0));
 
-    auto pointData = grid->GetPointData();
-    if (pointData->HasArray("FFTLE"))
-    {
-        pointData->RemoveArray("FFTLE");
-    }
+    std::cerr << "FFTLE range: [" << *std::min_element(fftle.begin(), fftle.end()) << ", "
+              << *std::max_element(fftle.begin(), fftle.end()) << "]\n";
+    std::cerr << "BFTLE range: [" << *std::min_element(bftle.begin(), bftle.end()) << ", "
+              << *std::max_element(bftle.begin(), bftle.end()) << "]\n";
 
-    if (pointData->HasArray("BFTLE"))
-    {
-        pointData->RemoveArray("BFTLE");
-    }
+    auto pointData = grid->GetPointData();
     pointData->AddArray(fftleArray);
     pointData->AddArray(bftleArray);
-    pointData->SetActiveScalars(this->activeField.c_str());
+    pointData->SetActiveScalars(this->activeFieldName.c_str());
     pointData->Modified();
     grid->Modified();
 }
 
 void FTLEComputer::updateScene()
 {
-    auto actors = renderer->GetActors();
-    for (int i = 0; i < actors->GetNumberOfItems(); ++i)
+    if (this->renderWindow && this->renderWindow->HasRenderer(renderer))
     {
-        renderer->RemoveActor(actors->GetNextActor());
+        this->renderWindow->RemoveRenderer(renderer);
     }
-    auto actors2D = renderer->GetActors2D();
-    for (int i = 0; i < actors2D->GetNumberOfItems(); ++i)
-    {
-        renderer->RemoveActor2D(actors2D->GetNextActor2D());
-    }
+    this->renderer = vtkSmartPointer<vtkRenderer>::New();
+    this->renderWindow->AddRenderer(renderer);
 
-    vtkSmartPointer<vtkDataSetMapper> mapper = vtkSmartPointer<vtkDataSetMapper>::New();
-    mapper->SetInputData(grid);
-    mapper->SetScalarRange(grid->GetPointData()->GetScalars()->GetRange());
-    this->cubeActor = vtkSmartPointer<vtkActor>::New();
-    this->cubeActor->SetMapper(mapper);
+    auto cubeMapper = vtkSmartPointer<vtkDataSetMapper>::New();
+    cubeMapper->SetInputData(grid);
+    cubeMapper->SetScalarRange(grid->GetPointData()->GetScalars()->GetRange());
+    auto cubeActor = vtkSmartPointer<vtkActor>::New();
+    cubeActor->SetMapper(cubeMapper);
+    cubeActor->SetVisibility(!showContour);
     renderer->AddActor(cubeActor);
 
-    this->resetContourFilter();
-    vtkSmartPointer<vtkDataSetMapper> contourMapper = vtkSmartPointer<vtkDataSetMapper>::New();
+    auto contourFilter = vtkSmartPointer<vtkContourFilter>::New();
+    contourFilter->SetInputData(grid);
+    contourFilter->GenerateValues(this->numContours, grid->GetScalarRange());
+
+    auto contourMapper = vtkSmartPointer<vtkDataSetMapper>::New();
     contourMapper->SetInputConnection(contourFilter->GetOutputPort());
+    contourMapper->SetScalarRange(grid->GetScalarRange());
+    auto contourActor = vtkSmartPointer<vtkActor>::New();
+    contourActor->SetMapper(contourMapper);
+    contourActor->SetVisibility(showContour);
+    renderer->AddActor(contourActor);
 
-    double scalarRange[2];
-    grid->GetPointData()->GetScalars()->GetRange(scalarRange);
-
-    // Create a lookup table with 256 table values.
-    vtkSmartPointer<vtkLookupTable> contourLUT = vtkSmartPointer<vtkLookupTable>::New();
-    int tableSize = 256;
-    contourLUT->SetNumberOfTableValues(tableSize);
-    contourLUT->SetRange(scalarRange);
-    contourLUT->Build();
-
-    // Fill the lookup table. In this example we use a blue-to-red color map.
-    // The alpha values are ramped from 0 at the low end to 1 at the high end.
-    for (int i = 0; i < tableSize; i++)
-    {
-        double t = static_cast<double>(i) / (tableSize - 1); // normalized [0,1]
-        double alpha = t;                                    // lowest (t=0) gets 0 alpha; highest (t=1) gets 1 alpha
-
-        // Example: blue-to-red color interpolation:
-        // At t=0, color = blue (0, 0, 1); at t=1, color = red (1, 0, 0)
-        double r = t;
-        double g = 0.0;
-        double b = 1.0 - t;
-
-        contourLUT->SetTableValue(i, r, g, b, alpha);
-    }
-
-    // Assign the lookup table to the contour mapper.
-    contourMapper->SetLookupTable(contourLUT);
-    contourMapper->SetScalarRange(scalarRange);
-
-    this->contourActor = vtkSmartPointer<vtkActor>::New();
-    this->contourActor->SetMapper(contourMapper);
-    this->contourActor->SetVisibility(showContour);
-
-    vtkSmartPointer<vtkScalarBarActor> scalarBar = vtkSmartPointer<vtkScalarBarActor>::New();
-    scalarBar->SetLookupTable(mapper->GetLookupTable());
+    auto lut = showContour ? contourMapper->GetLookupTable() : cubeMapper->GetLookupTable();
+    lut->Print(std::cout);
+    auto scalarBar = vtkSmartPointer<vtkScalarBarActor>::New();
+    scalarBar->SetLookupTable(lut);
     scalarBar->SetTitle("FTLE");
-    scalarBar->SetNumberOfLabels(4);
+    scalarBar->SetNumberOfLabels(10);
     renderer->AddActor2D(scalarBar);
 
     renderer->SetBackground(0.1, 0.2, 0.4);
@@ -479,12 +451,10 @@ void FTLEComputer::render()
         return;
     }
 
-    this->renderer = vtkSmartPointer<vtkRenderer>::New();
-    this->updateScene();
-
-    vtkSmartPointer<vtkRenderWindow> renderWindow = vtkSmartPointer<vtkRenderWindow>::New();
+    renderWindow = vtkSmartPointer<vtkRenderWindow>::New();
     renderWindow->SetSize(1920, 1080);
-    renderWindow->AddRenderer(renderer);
+
+    this->updateScene();
 
     vtkSmartPointer<vtkRenderWindowInteractor> renderWindowInteractor = vtkSmartPointer<vtkRenderWindowInteractor>::New();
     renderWindowInteractor->SetRenderWindow(renderWindow);
@@ -518,17 +488,33 @@ void FTLEComputer::toggleActiveField()
         std::cerr << "No scalar data available to toggle.\n";
         return;
     }
-    std::string currentScalar = pointData->GetScalars()->GetName();
-    this->activeField = (currentScalar == "FFTLE") ? "BFTLE" : "FFTLE";
-    pointData->SetActiveScalars(this->activeField.c_str());
-    std::cout << "Toggled active scalar to: " << this->activeField << "\n";
+    this->activeFieldName = (this->activeFieldName == "FFTLE") ? "BFTLE" : "FFTLE";
+    pointData->SetActiveScalars(this->activeFieldName.c_str());
+    std::cout << "Toggled active scalar to: " << this->activeFieldName << "\n";
 
-    cubeActor->GetMapper()->SetScalarRange(grid->GetPointData()->GetScalars()->GetRange());
-    cubeActor->GetMapper()->Update();
-    this->resetContourFilter();
-    contourActor->GetMapper()->SetScalarRange(grid->GetPointData()->GetScalars()->GetRange());
-    contourActor->GetMapper()->Update();
+    if (renderer)
+    {
+        this->updateScene();
+        renderer->GetRenderWindow()->Render();
+    }
+}
 
-    this->renderer->ResetCamera();
-    this->renderer->ResetCameraScreenSpace();
+void FTLEComputer::saveGrid()
+{
+    std::cout << "Saving grid using format: " << this->outputFormat << std::endl;
+    std::string fileName = FindNextAvailableFileName([this](int counter)
+                                                     { 
+                                    std::string ext = this->outputFormat == "vtk" ? ".vti" : ".vdb";
+                                    return ToLower(this->activeFieldName) + "_" + std::to_string(counter) + ext; });
+    if (this->outputFormat == "vtk")
+    {
+        this->saveToVTK(fileName);
+    }
+    else
+    {
+        this->saveToVDB(fileName);
+    }
+
+    std::string paramsFileName = fileName.substr(0, fileName.find_last_of('.')) + "_params.txt";
+    this->saveSimParameters(paramsFileName);
 }

@@ -16,7 +16,7 @@ void printUsage(const char *programName)
               << "  --B VALUE      Value for B in ABC flow (default: 1.0)\n"
               << "  --C VALUE      Value for C in ABC flow (default: 1.0)\n"
               << "  --randomize    Randomize the flow parameters\n"
-              << "  --numIsos N    Number of isosurfaces to generate (default: 5)\n"
+              << "  --numContours N    Number of isosurfaces to generate (default: 5)\n"
               << "  --help         Show this help message\n";
 }
 
@@ -28,7 +28,7 @@ int main(int argc, char *argv[])
     double B = 1.4142;
     double C = 1.0;
     bool randomize = false;
-    int numIsos = 5;
+    int numContours = 5;
     double t0 = 0.0;
     double tf = 10.0;
     double dt = 0.1;
@@ -93,9 +93,9 @@ int main(int argc, char *argv[])
         {
             numCheckpoints = std::stoi(argv[++i]);
         }
-        else if (strcmp(argv[i], "--numIsos") == 0 && i + 1 < argc)
+        else if (strcmp(argv[i], "--numContours") == 0 && i + 1 < argc)
         {
-            numIsos = std::stoi(argv[++i]);
+            numContours = std::stoi(argv[++i]);
         }
         else
         {
@@ -105,7 +105,6 @@ int main(int argc, char *argv[])
         }
     }
 
-    FTLEComputer ftle(resolution, format);
     if (randomize)
     {
         const double A_MIN = 0.5, A_MAX = 2.0;
@@ -131,9 +130,11 @@ int main(int argc, char *argv[])
         }
     }
 
+    FTLEComputer ftle(resolution);
     ftle.setABCParameters(A, B, C);
-    ftle.setNumIsos(numIsos);
     ftle.setAdvectionParams({t0, tf, dt, numCheckpoints});
+    ftle.setNumContours(numContours);
+    ftle.setOutputFormat(format);
 
     std::cout << "Computing FTLE...\n";
     ftle.advanceCheckpoint();
