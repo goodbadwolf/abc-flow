@@ -33,6 +33,7 @@ int main(int argc, char *argv[])
     double tf = 10.0;
     double dt = 0.1;
     int numCheckpoints = 1;
+    int currentCheckpoint = 0;
 
     bool providedA = false;
     bool providedB = false;
@@ -93,6 +94,10 @@ int main(int argc, char *argv[])
         {
             numCheckpoints = std::stoi(argv[++i]);
         }
+        else if (strcmp(argv[i], "--currentCheckpoint") == 0 && i + 1 < argc)
+        {
+            currentCheckpoint = std::stoi(argv[++i]);
+        }
         else if (strcmp(argv[i], "--numContours") == 0 && i + 1 < argc)
         {
             numContours = std::stoi(argv[++i]);
@@ -131,8 +136,10 @@ int main(int argc, char *argv[])
     }
 
     FTLEComputer ftle(resolution);
+    std::cout << "Setting ABC parameters: A=" << A << ", B=" << B << ", C=" << C << "\n";
     ftle.setABCParameters(A, B, C);
-    ftle.setAdvectionParams({t0, tf, dt, numCheckpoints});
+    // currentCheckpoint is incremented before computing FTLE. So we pass user input -1
+    ftle.setAdvectionParams({t0, tf, dt, numCheckpoints, currentCheckpoint - 1});
     ftle.setNumContours(numContours);
     ftle.setOutputFormat(format);
 

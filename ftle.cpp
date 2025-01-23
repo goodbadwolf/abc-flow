@@ -93,7 +93,7 @@ auto measureTime(F &&func, Args &&...args)
 }
 
 FTLEComputer::FTLEComputer(int gridResolution) : gridResolution(gridResolution), outputFormat("vdb"), A(1.0), B(1.0), C(1.0),
-                                                 advectionParams({0.0, 10.0, 0.1, 1}), currentCheckpoint(-1)
+                                                 advectionParams({0.0, 10.0, 0.1, 1, -1})
 {
     double cellSpacing = 2.0 * M_PI / (gridResolution - 1);
     grid = vtkSmartPointer<vtkImageData>::New();
@@ -112,7 +112,6 @@ void FTLEComputer::setABCParameters(double a, double b, double c)
 void FTLEComputer::setAdvectionParams(const ParticleAdvectionParams &params)
 {
     advectionParams = params;
-    currentCheckpoint = -1;
 }
 
 void FTLEComputer::setOutputFormat(const std::string &outputFormat)
@@ -209,31 +208,32 @@ std::vector<double> FTLEComputer::computeFTLEField(
 
 void FTLEComputer::advanceCheckpoint()
 {
-    if (currentCheckpoint >= advectionParams.numCheckpoints - 1)
+    if (advectionParams.currentCheckpoint >= advectionParams.numCheckpoints - 1)
     {
         std::cout << "Already at the last checkpoint\n";
         return;
     }
-    currentCheckpoint++;
+    advectionParams.currentCheckpoint++;
     this->computeFTLE();
     if (this->renderer)
     {
-
+        this->updateScene();
         this->renderer->GetRenderWindow()->Render();
     }
 }
 
 void FTLEComputer::backtrackCheckpoint()
 {
-    if (currentCheckpoint <= 0)
+    if (advectionParams.currentCheckpoint <= 0)
     {
         std::cout << "Already at the first checkpoint\n";
         return;
     }
-    currentCheckpoint--;
+    advectionParams.currentCheckpoint--;
     this->computeFTLE();
     if (this->renderer)
     {
+        this->updateScene();
         this->renderer->GetRenderWindow()->Render();
     }
 }
@@ -246,9 +246,9 @@ void FTLEComputer::computeFTLE()
     double totalDuration = advectionParams.tf - advectionParams.t0;
     double checkpointDuration = totalDuration / advectionParams.numCheckpoints;
 
-    double t_start = advectionParams.t0 + currentCheckpoint * checkpointDuration;
-    double t_end = advectionParams.t0 + (currentCheckpoint + 1) * checkpointDuration;
-    std::cout << "Computing FTLE for checkpoint " << currentCheckpoint << "\n";
+    double t_start = advectionParams.t0 + advectionParams.currentCheckpoint * checkpointDuration;
+    double t_end = advectionParams.t0 + (advectionParams.currentCheckpoint + 1) * checkpointDuration;
+    std::cout << "Computing FTLE for checkpoint " << advectionParams.currentCheckpoint << "\n";
     std::cout << "Time interval: [" << t_start << ", " << t_end << "]\n";
 
     auto [fwdParticles, fwdTime] = measureTime(
@@ -261,9 +261,8 @@ void FTLEComputer::computeFTLE()
         particles, fwdParticles, std::abs(t_end - t_start));
     fftle = std::move(fftleResult);
     std::cout << "Forward FTLE computation time: " << fftleTime << " seconds\n";
-
-    double t0_backward = 10.0;
-    double tf_backward = 0.0;
+    std::cout << "FFTLE range: [" << *std::min_element(fftle.begin(), fftle.end()) << ", "
+              << *std::max_element(fftle.begin(), fftle.end()) << "]\n";
 
     auto [bwdParticles, bwdTime] = measureTime(
         &FTLEComputer::advectParticles, this,
@@ -275,6 +274,8 @@ void FTLEComputer::computeFTLE()
         particles, bwdParticles, std::abs(t_end - t_start));
     bftle = std::move(bftleResult);
     std::cout << "Backward FTLE computation time: " << bftleTime << " seconds\n";
+    std::cout << "BFTLE range: [" << *std::min_element(bftle.begin(), bftle.end()) << ", "
+              << *std::max_element(bftle.begin(), bftle.end()) << "]\n";
 
     this->updateGrid(fftle, bftle);
 }
@@ -360,7 +361,7 @@ void FTLEComputer::saveSimParameters(const std::string &fileName)
     paramFile << "t0: " << advectionParams.t0 << "\n";
     paramFile << "tf: " << advectionParams.tf << "\n";
     paramFile << "dt: " << advectionParams.dt << "\n";
-    paramFile << "currentCheckpoint: " << currentCheckpoint << "\n";
+    paramFile << "currentCheckpoint: " << advectionParams.currentCheckpoint << "\n";
     paramFile << "numCheckpoints: " << advectionParams.numCheckpoints << "\n";
     paramFile.close();
 }
@@ -388,11 +389,6 @@ void FTLEComputer::updateGrid(const std::vector<double> &fftle, const std::vecto
     bftleArray->SetNumberOfComponents(1);
     bftleArray->SetNumberOfTuples(grid->GetNumberOfPoints());
     std::copy(bftle.begin(), bftle.end(), bftleArray->GetPointer(0));
-
-    std::cerr << "FFTLE range: [" << *std::min_element(fftle.begin(), fftle.end()) << ", "
-              << *std::max_element(fftle.begin(), fftle.end()) << "]\n";
-    std::cerr << "BFTLE range: [" << *std::min_element(bftle.begin(), bftle.end()) << ", "
-              << *std::max_element(bftle.begin(), bftle.end()) << "]\n";
 
     auto pointData = grid->GetPointData();
     pointData->AddArray(fftleArray);
@@ -432,7 +428,6 @@ void FTLEComputer::updateScene()
     renderer->AddActor(contourActor);
 
     auto lut = showContour ? contourMapper->GetLookupTable() : cubeMapper->GetLookupTable();
-    lut->Print(std::cout);
     auto scalarBar = vtkSmartPointer<vtkScalarBarActor>::New();
     scalarBar->SetLookupTable(lut);
     scalarBar->SetTitle("FTLE");

@@ -36,6 +36,7 @@ struct ParticleAdvectionParams
     double tf;
     double dt;
     int numCheckpoints;
+    int currentCheckpoint;
 };
 
 class FTLEComputer
@@ -82,7 +83,6 @@ private:
     double A, B, C;
     std::string outputFormat;
     ParticleAdvectionParams advectionParams;
-    int currentCheckpoint = -1;
     bool showContour = false;
     int numContours = 10;
     std::string activeFieldName = "FFTLE";
