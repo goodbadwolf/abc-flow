@@ -17,6 +17,7 @@
 #include <vtkActor2DCollection.h>
 #include <vtkAxesActor.h>
 #include <vtkCallbackCommand.h>
+#include <vtkCamera.h>
 #include <vtkDataSetMapper.h>
 #include <vtkInteractorStyleTrackballCamera.h>
 #include <vtkLookupTable.h>
@@ -400,8 +401,16 @@ void FTLEComputer::updateGrid(const std::vector<double> &fftle, const std::vecto
 
 void FTLEComputer::updateScene()
 {
+    bool retainCamera = false;
+    double cameraPos[3], cameraFocal[3], cameraViewUp[3];
+
     if (this->renderWindow && this->renderWindow->HasRenderer(renderer))
     {
+        retainCamera = true;
+        renderer->GetActiveCamera()->GetPosition(cameraPos);
+        renderer->GetActiveCamera()->GetFocalPoint(cameraFocal);
+        renderer->GetActiveCamera()->GetViewUp(cameraViewUp);
+
         this->renderWindow->RemoveRenderer(renderer);
     }
     this->renderer = vtkSmartPointer<vtkRenderer>::New();
@@ -436,6 +445,13 @@ void FTLEComputer::updateScene()
 
     renderer->SetBackground(0.1, 0.2, 0.4);
     renderer->ResetCamera();
+
+    if (retainCamera)
+    {
+        renderer->GetActiveCamera()->SetPosition(cameraPos);
+        renderer->GetActiveCamera()->SetFocalPoint(cameraFocal);
+        renderer->GetActiveCamera()->SetViewUp(cameraViewUp);
+    }
 }
 
 void FTLEComputer::render()
